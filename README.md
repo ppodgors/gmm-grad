@@ -1,4 +1,4 @@
-# Regularization in the EM Agorithm for Gaussian Mixture Models
+# Adaptive Regularization in the Expectation–Maximization Algorithm for Gaussian Mixture Models
 
 This repository contains the source code and a series of experiments for research on regularized EM algorithm for Gaussian Mixture Models (GMMs).
 The primary goal is to compare the performance of a standard GMM against two custom regularized GMMs. 
