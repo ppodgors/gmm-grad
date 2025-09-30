@@ -74,9 +74,9 @@ class RegularizedGMM:
                 log_p[:, k] = -np.inf
         return np.argmax(log_p, axis=1)
 
-    def _calculate_eta(self, X, pi, means, covariances, T):
+    def _calculate_eta(self, X, pi, means, covariances, T,adam):
         if self.eta_method == 'grad':
-            return self._eta_grad(X, pi, means, covariances, T)
+            return self._eta_grad(X, pi, means, covariances, T, adam)
         else:
             return self._eta_gs(X, pi, means, covariances, T)
 
@@ -225,7 +225,7 @@ class RegularizedGMM:
         prev_log_likelihood = -np.inf
         for i in range(self.max_iters):
             if i == 0 or (i % 20 == 0 and i > 1):
-                reg_eta = self._calculate_eta(X, pi, means, covariances, T)
+                reg_eta = self._calculate_eta(X, pi, means, covariances, T, adam=(i==0))
             p = self._e_step(X, pi, means, covariances)
             pi, means, covariances = self._m_step(X, p, T, reg_eta)
             log_likelihood = self._compute_log_likelihood(X, pi, means, covariances)
