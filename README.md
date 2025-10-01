@@ -29,46 +29,123 @@ You can install all dependencies by running:
 ```bash
 pip install -r requirements.txt
 ```
-## Running the Experiment
+## Synthetic Data Experiment
 
-The main experiment script is `run_synthetic_experiment.py`. It is configured via command-line arguments.
+This is the primary experiment of the study, designed to evaluate model performance on synthetic datasets across a range of feature dimensionalities (`d`).
+
+The core logic for this experiment is located in the `src/experiments/synthetic/` directory.
+
+---
+
+### Running the Experiment
+
+The experiment is managed via the `main.py` script using the `synthetic` command, which has two actions: `run` and `plot`.
+
+**Running the Simulation**
+
+To run the main simulation, use the `run` action. You must specify the number of samples per component. The **default** parameters are configured to reproduce the **exact results presented in our publication**.
+
+```bash
+python main.py synthetic run --n_samples 50
+```
+
+**Plotting the Results**
+
+After the simulation is complete, you can generate plots from the saved results file using the `plot` action.
+
+```bash
+python main.py synthetic plot --input_file simulation_results/results_n50.npz
+```
+### Command-Line Arguments
+| Argument          | Default | Description                                               |
+|-------------------|---------|-----------------------------------------------------------|
+| `--n_samples`     |         | **(Required)** The number of samples per component.       |
+| `--num_worlds`    | `25`    | The number of different synthetic "worlds" to generate.   |
+| `--num_reps`      | `4`     | The number of replications for each world.                |
+| `--d_start`       | `20`    | The starting dimensionality of the feature space.         |
+| `--d_stop`        | `101`   | The exclusive ending dimensionality of the feature space. |
+| `--d_step`        | `10`    | The step size for the dimensionality range.               |
+
+### Output
+
+After running the `main.py synthetic run` command, the script saves the numerical results to the `simulation_results/` directory.
+
+* **Format**: The results are stored in a NumPy (`.npz`) archive file.
+* **Filename**: The name is based on the number of samples (`n`), e.g., `results_n100.npz`.
+
+Each `.npz` file contains the following data arrays:
+* `d_values`: The range of feature dimensions tested.
+* `n_value`: The number of samples per component used in the run.
+* `ari_grad`, `nmi_grad`, `time_grad`: Metrics for the GMM-grad method.
+* `ari_gs`, `nmi_gs`, `time_gs`: Metrics for the GMM-GS method.
+* `ari_gmm`, `nmi_gmm`, `time_gmm`: Metrics for the standard GMM.
+
+## Olivetti Faces Experiment
+This experiment evaluates clustering performance on the Olivetti Faces dataset, with the goal of automatically grouping photos of the same individual.
+The core logic for this experiment is located in the `src/experiments/olivetti/` directory.
+
+---
+
+### Running the Experiment
+he experiment is managed via the `main.py` script using the `olivetti` command.
+
+The **default parameters** of this script are configured to reproduce the **exact results presented in our publication**. To run the experiment:
+
+```bash
+python main.py --experiment olivetti
+```
 
 ### Command-Line Arguments
-* `--n_samples`: (Required) The number of samples per component/cluster.
-* `--num_worlds`: (Optional) The number of different synthetic "worlds" (sets of true parameters) to generate. Default: `25`.
-* `--num_reps`: (Optional) The number of random datasets (replications) to generate for each world. Default: `4`.
-* `--d_start`: (Optional) The starting dimensionality of the feature space. Default: `20`.
-* `--d_stop`: (Optional) The exclusive ending dimensionality of the feature space. Default: `101`.
-* `--d_step`: (Optional) The step size for the dimensionality range. Default: `10`.
 
-### Example Usage
-To run the full experiment for `n=50` samples per component, with 25 worlds and 4 replications each:
+| Argument       | Default            | Description                                          |
+|----------------|--------------------|------------------------------------------------------|
+| `--n_rep`      | `25`               | The number of experiment repetitions for averaging.  |
+| `--main_seed`  | `27`               | The main random seed for initialization.             |
+| `--subjects`    | `10`               | The number of subjects (classes) from the dataset.   |
+| `--output_dir` | `Olivetti_results` | The directory where the output file will be saved.   |
+
+### Output
+
+After execution, the script will produce:
+
+1.  A summary of the final mean **ARI** and **NMI** scores, averaged over all repetitions and printed to the console.
+2.  A detailed results file named `results.pkl`, saved in the specified output directory (`Olivetti_results/` by default). This file is a Python pickle object containing a dictionary with the raw metrics from each repetition.
+
+## 20 Newsgroups Experiment
+
+This experiment evaluates the clustering performance of regularized and standard GMMs on vectorized text data from the 20 Newsgroups dataset. The process involves creating document embeddings using a TF-IDF weighted average of `word2vec-google-news-300` word vectors.
+
+The core logic for this experiment is located in the `src/experiments/newsgroups/` directory.
+
+---
+
+**Note**: The first time you run the experiment, the script will automatically download the `NLTK` stopwords corpus if it is not found on your system. The `word2vec-google-news-300` model (1.6 GB) will also be downloaded, which may take some time.
+
+
+### Running the Experiment
+This experiment uses an automated workflow. The `main` script checks if the necessary datasets exist; if not, it generates them before running the clustering analysis.
+
+The **default** parameters are configured to reproduce the **exact results presented in our publication**. To run the experiment with the default configuration:
 
 ```bash
-python main.py --n_samples 50
+python main.py newsgroups
 ```
-## Results
 
-After running `run_synthetic_experiment.py`, the numerical results are saved in the `simulation_results/` directory, which is created automatically.
+The first run will be significantly longer as it includes the one-time data generation step. Subsequent runs will be much faster as they will reuse the existing data files.
 
-* **Format**: The results are stored in a NumPy `.npz` archive file. 
-* **Filename Convention**: The files are named based on the number of samples (`n`) used in the experiment.
-    * Example: `simulation_results/results_n50.npz`
+### Command-Line Arguments
 
-Each `.npz` file contains the following arrays:
-* `d_values`: The range of dimensions tested.
-* `n_value`: The number of samples per component.
-* `ari_grad`, `nmi_grad`: ARI and NMI scores for the GMM-grad method.
-* `ari_gs`, `nmi_gs`: ARI and NMI scores for the GMM-GS method.
-* `ari_gmm`, `nmi_gmm`: ARI and NMI scores for the standard GMM.
+| Argument            | Default                                               | Description                                                     |
+|---------------------|-------------------------------------------------------|-----------------------------------------------------------------|
+| `--worlds`          | `15`                                                  | The number of data variations ("worlds") to generate and test.  |
+| `--reps`            | `10`                                                  | The number of repetitions with different seeds per world.       |
+| `--samples_per_cat` | `100`                                                 | The number of documents to sample per category.                 |
+| `--data_dir`        | `words`                                               | The directory to store the generated datasets and results.      |
+| `--categories`      | `rec.sport.baseball soc.religion.christian sci.space` | A space-separated list of newsgroup categories to include.      |
 
-### Generating Plots
+### Output
 
-To visualize the results, use the `plot_results_synthetic_exp.py` script. 
+After execution, the script will produce:
 
-**Usage:**
-
-You must provide the path to the input results file using the `--input_file` argument.
-
-```bash
-python plot_results_synthetic_exp.py --input_file simulation_results/results_n50.npz
+1.  A summary of the final mean **ARI** and **NMI** scores, averaged over all worlds and repetitions, printed to the console.
+2.  A detailed results file saved in the specified data directory (`newsgroups_results/` by default). The filename indicates the number of worlds and repetitions (e.g., `results_w15_r10.pkl`). This file is a Python pickle object containing a dictionary with the raw metrics from every run.

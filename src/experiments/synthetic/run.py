@@ -2,34 +2,29 @@ import numpy as np
 import time
 import sys
 import os
-import argparse
 import random
 import torch
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 
 from src.regularized_gmm import RegularizedGMM
-from src.data_generator import generate_world_parameters, generate_trial_dataset
+from .data_generator import generate_world_parameters, generate_trial_dataset
 
-def run_single_trial(X_data, y_true, k_components, trial_seed):
+def run_single_trial(X_data, y_true, k_components, trial_seed=42):
     """
     Runs all models on a single dataset, setting seeds and parameters
     """
-    np.random.seed(trial_seed)
-    random.seed(trial_seed)
-    torch.manual_seed(trial_seed)
 
     metrics = {}
-
-    # --- 1. Standard scikit-learn GMM ---
+    # Standard GMM
     t0_gmm = time.perf_counter()
-    gmm = GaussianMixture(n_components=k_components, n_init=10) 
+    gmm = GaussianMixture(n_components=k_components) 
     labels_gmm = gmm.fit_predict(X_data)
     metrics['time_gmm'] = time.perf_counter() - t0_gmm
     metrics['ari_gmm'] = adjusted_rand_score(y_true, labels_gmm)
     metrics['nmi_gmm'] = normalized_mutual_info_score(y_true, labels_gmm)
 
-    # --- 2. Regularized GMM with Gradient method ---
+    # GMM-grad
     t0_grad = time.perf_counter()
     model_grad = RegularizedGMM(k_components=k_components, eta_method='grad')
     model_grad.fit(X_data, seed=trial_seed) 
@@ -38,7 +33,7 @@ def run_single_trial(X_data, y_true, k_components, trial_seed):
     metrics['ari_grad'] = adjusted_rand_score(y_true, labels_grad)
     metrics['nmi_grad'] = normalized_mutual_info_score(y_true, labels_grad)
 
-    # --- 3. Regularized GMM with Grid Search (GMM-GS) method ---
+    # GMM-GS
     t0_gs = time.perf_counter()
     model_gs = RegularizedGMM(k_components=k_components, eta_method='gs')
     model_gs.fit(X_data, seed=trial_seed)
@@ -49,7 +44,7 @@ def run_single_trial(X_data, y_true, k_components, trial_seed):
 
     return metrics
 
-def main(args):
+def run_synthetic_experiment(args):
     D_VALUES = range(args.d_start, args.d_stop, args.d_step)
     N_SAMPLES_PER_COMPONENT = args.n_samples
     NUM_WORLDS = args.num_worlds
@@ -72,7 +67,7 @@ def main(args):
             random.seed(world_seed)
             torch.manual_seed(world_seed)
 
-            true_mus, true_covs = generate_world_parameters(d_features, K_COMPONENTS, world_seed)
+            true_mus, true_covs = generate_world_parameters(d_features, K_COMPONENTS)
             
             for rep_idx in range(NUM_REPLICATIONS):
                 trial_seed = 10000 * world_idx + rep_idx
@@ -82,8 +77,8 @@ def main(args):
                 random.seed(trial_seed)
                 torch.manual_seed(trial_seed)
 
-                X_data, y_true = generate_trial_dataset(N_SAMPLES_PER_COMPONENT, true_mus, true_covs, trial_seed)
-                trial_metrics = run_single_trial(X_data, y_true, K_COMPONENTS, trial_seed)
+                X_data, y_true = generate_trial_dataset(N_SAMPLES_PER_COMPONENT, true_mus, true_covs)
+                trial_metrics = run_single_trial(X_data, y_true, K_COMPONENTS)
                 
                 for key, value in trial_metrics.items():
                     results[key][trial_flat_idx, d_idx] = value
@@ -100,16 +95,6 @@ def main(args):
     np.savez(results_filename, d_values=list(D_VALUES), n_value=N_SAMPLES_PER_COMPONENT, **results)
     print(f"Results saved to {results_filename}")
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Run the synthetic data experiment for Regularized GMM.")
-    parser.add_argument('--n_samples', type=int, required=True, help="Number of samples per component.")
-    parser.add_argument('--num_worlds', type=int, default=25, help="Number of worlds to generate.")
-    parser.add_argument('--num_reps', type=int, default=4, help="Number of replications per world.")
-    parser.add_argument('--d_start', type=int, default=20, help="Starting number of features (d).")
-    parser.add_argument('--d_stop', type=int, default=101, help="Ending number of features (d), exclusive.")
-    parser.add_argument('--d_step', type=int, default=10, help="Step for the number of features range.")
-    args = parser.parse_args()
-    main(args)
 
 
                

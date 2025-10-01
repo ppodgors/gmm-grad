@@ -16,8 +16,8 @@ class RegularizedGMM:
         self.eta_method = eta_method
         self.pi_, self.means_, self.covariances_, self.seed_ = None, None, None, None
 
-    def _initialize_params(self, X):
-        gmm = GaussianMixture(n_components=self.k_components, max_iter=5, random_state=self.seed_, init_params='kmeans', n_init=10)
+    def _initialize_params(self, X, seed):
+        gmm = GaussianMixture(n_components=self.k_components, max_iter=5, random_state=seed, init_params='kmeans', n_init=10)
         gmm.fit(X)
         return gmm.weights_.copy(), gmm.means_.copy(), gmm.covariances_.copy()
 
@@ -49,20 +49,21 @@ class RegularizedGMM:
                 cov_reg += np.eye(cov_reg.shape[0]) * 1e-6
                 cov_reg = (cov_reg + cov_reg.T) / 2
             covariances_new.append(cov_reg)
-        return pi_new, means_new, np.array(covariances_new)
+        return pi_new, means_new, covariances_new
 
     def _compute_log_likelihood(self, X, pi, means, covariances):
         log_sum = None
         for k in range(self.k_components):
             Sigma = np.nan_to_num(covariances[k], nan=1e-6) + np.eye(covariances[k].shape[0]) * 1e-6
-            log_lik_k = np.log(pi[k] + 1e-12) + multivariate_normal.logpdf(X, means[k], Sigma, allow_singular=True)
+            log_lik_k = np.log(pi[k] + 1e-12) + multivariate_normal.logpdf(X, means[k], Sigma)
             if k == 0:
                 log_sum = log_lik_k
             else:
                 log_sum = np.logaddexp(log_sum, log_lik_k)
         return log_sum.sum()
-    
+
     def _assign_labels(self, X, pi, means, covariances):
+        warnings.filterwarnings('ignore', category=RuntimeWarning)
         log_p = np.zeros((X.shape[0], self.k_components))
         for k in range(self.k_components):
             try:
@@ -81,31 +82,38 @@ class RegularizedGMM:
             return self._eta_gs(X, pi, means, covariances, T)
 
     def _eta_gs(self, X, pi, means, covariances, T):
-        L=5; n, m = X.shape; labels = self._assign_labels(X, pi, means, covariances)
+        L=5 
+        n, m = X.shape
+        labels = self._assign_labels(X, pi, means, covariances)
         clusters = {k: X[labels == k] for k in range(len(pi))}
-        final_eta = []; eta_list = [0] + list(np.logspace(0, 4, num=5))
+        final_eta = []
+        eta_list = [0] + list(np.logspace(0, 4, num=5))
         for k in range(len(pi)):
-            if k not in clusters or clusters[k].shape[0] < 4:
-                final_eta.append(1); continue
             cluster = clusters[k]
-            kf = KFold(n_splits=min(L, cluster.shape[0] - 1)); Tk = T[k]
-            errors = np.zeros(len(eta_list))
-            for train_index, test_index in kf.split(cluster):
-                train_data, test_data = cluster[train_index], cluster[test_index]
-                if train_data.shape[0] < 2: continue
-                n_train = train_data.shape[0]
-                S_train = np.cov(train_data, rowvar=False, bias=True)
-                S_val = np.eye(m) if test_data.shape[0] < 2 else np.cov(test_data, rowvar=False, bias=True)
-                S_val, S_train, Tk = np.atleast_2d(S_val), np.atleast_2d(S_train), np.atleast_2d(Tk)
-                for j, eta in enumerate(eta_list):
-                    Sigma_eta = n_train / (eta + n_train) * S_train + (eta) / (eta + n_train) * Tk
-                    Sigma_eta = np.atleast_2d(Sigma_eta) + np.eye(Sigma_eta.shape[0]) * 1e-6
-                    try:
+            if cluster.shape[0] < 4:
+                final_eta.append(1)
+            else: 
+                kf = KFold(n_splits=min(L, cluster.shape[0] - 1))
+                Tk = T[k]
+                errors = np.zeros(len(eta_list))
+                for train_index, test_index in kf.split(cluster):
+                    train_data, test_data = cluster[train_index], cluster[test_index]
+                    n_train = train_data.shape[0]
+                    if test_data.shape[0] < 2: 
+                        S_val = np.eye(m)
+                    else:
+                        S_val = np.cov(test_data, rowvar=False, bias=True)
+                    S_train = np.cov(train_data, rowvar=False, bias=True)
+                    S_val = np.atleast_2d(S_val)
+                    S_train = np.atleast_2d(S_train)
+                    Tk = np.atleast_2d(Tk)
+                    for j, eta in enumerate(eta_list):
+                        Sigma_eta = n_train / (eta + n_train) * S_train + (eta) / (eta + n_train) * Tk
+                        Sigma_eta = np.atleast_2d(Sigma_eta) + np.eye(Sigma_eta.shape[0]) * 1e-6
                         trace_term = np.trace(np.linalg.solve(Sigma_eta, S_val))
                         log_det_term = np.log(np.linalg.det(Sigma_eta) + 1e-12)
                         errors[j] += trace_term + log_det_term
-                    except np.linalg.LinAlgError: errors[j] += np.inf
-            final_eta.append(eta_list[np.argmin(errors)])
+                final_eta.append(eta_list[np.argmin(errors)])
         return final_eta
     
     def _eta_grad(self, X, pi, means, covariances, T, use_adam=False):
@@ -115,33 +123,23 @@ class RegularizedGMM:
         final_eta = []
 
         for k in range(len(pi)):
-            if k not in clusters or clusters[k].shape[0] < 4:
-                final_eta.append((clusters.get(k, np.empty((0,0))).shape[0] + 1)**2)
-                continue
-            
             cluster = clusters[k]
             n_k = cluster.shape[0]
-            L_eff = min(3 if n_k < 50 else 5, n_k // 2)
-
-            if L_eff < 2:
+            if n_k < 4:
                 final_eta.append((n_k + 1)**2)
                 continue
-
+            L_eff = 3 if n_k < 50 else 5
+            L_eff = min(L_eff, n_k//2)
             kf = KFold(n_splits=L_eff, shuffle=True)
+            split_idx = list(kf.split(cluster))
             cov_pairs = []
 
-            for tr, va in kf.split(cluster):
+            for tr, va in split_idx:
                 Xtr, Xva = cluster[tr], cluster[va]
-                if Xtr.shape[0] < 2 or Xva.shape[0] < 2:
-                    continue
                 n_tr = Xtr.shape[0]
                 S_tr = (Xtr - Xtr.mean(0)).T @ (Xtr - Xtr.mean(0)) / n_tr
                 S_val = (Xva - Xva.mean(0)).T @ (Xva - Xva.mean(0)) / Xva.shape[0]
                 cov_pairs.append((S_tr, S_val, n_tr))
-
-            if not cov_pairs:
-                final_eta.append((n_k + 1)**2)
-                continue
 
             eta0_val = 1
             if use_adam:
@@ -161,7 +159,7 @@ class RegularizedGMM:
                         total_err.backward()
                         optimizer.step()
                         
-                        if eta.grad is not None and eta.grad.abs().item() < 1e-5:
+                        if eta.grad.abs().item() < 1e-5:
                             break
                         
                         cur_err = total_err.item()
@@ -200,29 +198,38 @@ class RegularizedGMM:
         return final_eta
     
     def _compute_pytorch_error(self, eta, S_tr, S_val, Tk, n_tr: int):
-        dtype, device = S_tr.dtype, S_tr.device; eta = eta.to(dtype=dtype, device=device)
+        dtype, device = S_tr.dtype, S_tr.device
+        eta = eta.to(dtype=dtype, device=device)
         S_val, Tk = S_val.to(dtype=dtype, device=device), Tk.to(dtype=dtype, device=device)
-        beta = n_tr / (eta + n_tr); S_eta = beta * S_tr + (1.0 - beta) * Tk
-        try: nudge = (torch.mean(torch.abs(torch.diag(S_eta))) * 1e-6 + 1e-9) if S_eta.numel() > 0 else 1e-9
-        except: nudge = 1e-9
-        eye = torch.eye(S_eta.shape[0], dtype=dtype, device=device); S_eta_stable = S_eta + eye * nudge
+        beta = n_tr / (eta + n_tr)
+        S_eta = beta * S_tr + (1.0 - beta) * Tk
         try:
-            trace = torch.trace(torch.linalg.solve(S_eta_stable, S_val)); logdet = torch.logdet(S_eta_stable)
+            if S_eta.numel() > 0:
+                diag_mean = torch.mean(torch.abs(torch.diag(S_eta)))
+                nudge = max(diag_mean.item(), 1e-9) * 1e-6 
+            else:
+                nudge = 1e-9
+        except: nudge = 1e-9
+        eye = torch.eye(S_eta.shape[0], dtype=S_eta.dtype, device=S_eta.device)
+        S_eta_stable = S_eta + eye * nudge
+        try:
+            trace = torch.trace(torch.linalg.solve(S_eta_stable, S_val))
+            logdet = torch.logdet(S_eta_stable)
             if torch.isnan(trace) or torch.isinf(trace) or torch.isnan(logdet) or torch.isinf(logdet):
                 return eta.square().squeeze() * 1e9
             return trace + logdet
-        except torch.linalg.LinAlgError: return eta.square().squeeze() * 1e9
+        except torch.linalg.LinAlgError: 
+            return eta.square().squeeze() * 1e9
 
     def fit(self, X, seed=42):
-        self.seed_ = seed
-        pi, means, covariances = self._initialize_params(X)
+        pi, means, covariances = self._initialize_params(X,seed)
         T = []
         for cov in covariances:
             m = cov.shape[0]
-            Ti = np.eye(m) * (np.trace(cov) / m) if m > 0 else np.eye(m)
+            Ti = np.eye(m) * (np.trace(cov) / m)
             T.append(Ti)
         T = np.array(T)
-        prev_log_likelihood = -np.inf
+        prev_log_likelihood = 0
         for i in range(self.max_iters):
             if i == 0 or (i % 20 == 0 and i > 1):
                 reg_eta = self._calculate_eta(X, pi, means, covariances, T, adam=(i==0))
