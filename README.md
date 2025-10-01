@@ -52,7 +52,7 @@ The experiment is managed via the `main.py` script using the `synthetic` command
 
 **Running the Simulation**
 
-To run the main simulation, use the `run` action. You must specify the number of samples per component. The **default** parameters are configured to reproduce the **exact results presented in our publication**.
+To run the main simulation, use the `run` action. You must specify the number of samples per component. The **default** parameters are configured to reproduce the **exact results presented in our manuscript**.
 
 ```bash
 python main.py synthetic run --n_samples 50
@@ -98,7 +98,7 @@ The core logic for this experiment is located in the `src/experiments/olivetti/`
 ### Running the Experiment
 he experiment is managed via the `main.py` script using the `olivetti` command.
 
-The **default parameters** of this script are configured to reproduce the **exact results presented in our publication**. To run the experiment:
+The **default parameters** of this script are configured to reproduce the **exact results presented in our manuscript**. To run the experiment:
 
 ```bash
 python main.py --experiment olivetti
@@ -134,7 +134,7 @@ The core logic for this experiment is located in the `src/experiments/newsgroups
 ### Running the Experiment
 This experiment uses an automated workflow. The `main` script checks if the necessary datasets exist; if not, it generates them before running the clustering analysis.
 
-The **default** parameters are configured to reproduce the **exact results presented in our publication**. To run the experiment with the default configuration:
+The **default** parameters are configured to reproduce the **exact results presented in our manuscript**. To run the experiment with the default configuration:
 
 ```bash
 python main.py newsgroups
