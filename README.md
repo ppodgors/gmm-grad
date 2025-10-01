@@ -29,6 +29,15 @@ You can install all dependencies by running:
 ```bash
 pip install -r requirements.txt
 ```
+
+## Running Experiments
+
+All experiments in this repository are managed through the `main.py` script. The general command structure is:
+
+```bash
+python main.py <experiment_name> [action] [options]
+```
+
 ## Synthetic Data Experiment
 
 This is the primary experiment of the study, designed to evaluate model performance on synthetic datasets across a range of feature dimensionalities (`d`).
